@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Osmose">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#050c14">
+<meta property="og:title" content="🧬 Osmose — Simulação Osmótica">
+<meta property="og:description" content="Aprenda osmose jogando! Mova água pela membrana e equilibre as células.">
+<title>🧬 Osmose</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Roboto+Mono:wght@400;600&display=swap');
+
+:root {
+  --font-display: 'Orbitron', system-ui, sans-serif;
+  --font-mono:    'Roboto Mono', monospace;
+  --bg:     #050c14;
+  --panel:  #0b1825;
+  --border: #1a3a5c;
+  --cyan:   #00e5ff;
+  --green:  #00ff9d;
+  --orange: #ff8c00;
+  --red:    #ff2d55;
+  --text:   #c8e6ff;
+  --dim:    #4a7fa5;
+  --safe-top:    env(safe-area-inset-top,    0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left,   0px);
+  --safe-right:  env(safe-area-inset-right,  0px);
+}
+
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+html { height:100%; overflow:hidden; }
+body {
+  font-family: var(--font-mono);
+  background: var(--bg); color: var(--text);
+  height:100%; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain;
+  padding: calc(var(--safe-top)+12px) calc(var(--safe-right)+14px)
+           calc(var(--safe-bottom)+28px) calc(var(--safe-left)+14px);
+  -webkit-tap-highlight-color:transparent;
+  -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+}
+body::before {
+  content:''; position:fixed; inset:0;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.025) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,229,255,0.025) 1px,transparent 1px);
+  background-size:40px 40px; pointer-events:none; z-index:-1;
+}
+.wrap { position:relative; z-index:1; width:100%; max-width:480px; margin:0 auto; display:flex; flex-direction:column; gap:10px; }
+
+/* Header */
+header { text-align:center; }
+h1 { font-family:var(--font-display); font-size:clamp(1.3rem,7vw,1.9rem); font-weight:900; letter-spacing:0.06em; background:linear-gradient(135deg,var(--cyan),var(--green)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin-bottom:2px; }
+.subtitle { font-size:0.55rem; color:var(--dim); letter-spacing:0.14em; text-transform:uppercase; }
+.header-actions { display:flex; justify-content:center; gap:8px; margin-top:8px; }
+
+/* Info bar — apenas 2 células agora (sem Tolerância) */
+.info-bar { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+.info-cell { background:var(--panel); padding:9px 8px; display:flex; flex-direction:column; align-items:center; gap:3px; }
+.info-lbl  { font-size:0.45rem; color:var(--dim); letter-spacing:0.1em; text-transform:uppercase; }
+.info-val  { font-family:var(--font-display); font-size:0.9rem; font-weight:700; color:var(--cyan); }
+
+/* Scenarios */
+.scenarios { display:grid; grid-template-columns:repeat(4,1fr); gap:5px; }
+.scen-btn { font-family:var(--font-mono); font-size:0.5rem; padding:8px 4px; border:1px solid var(--border); border-radius:8px; background:transparent; color:var(--dim); cursor:pointer; min-height:44px; display:flex; align-items:center; justify-content:center; text-align:center; line-height:1.3; touch-action:manipulation; transition:all 0.15s; -webkit-appearance:none; appearance:none; }
+.scen-btn:active { transform:scale(0.92); }
+.scen-btn.active { border-color:var(--green); color:var(--green); background:rgba(0,255,157,0.07); }
+
+/* STAGE */
+.stage { display:flex; align-items:center; justify-content:center; min-height:230px; padding:8px 0; }
+.cell-wrap { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0; }
+.cell-lbl  { font-size:0.38rem; font-weight:600; color:var(--dim); text-transform:uppercase; letter-spacing:0.08em; text-align:center; line-height:1.4; min-height:22px; display:flex; align-items:center; justify-content:center; }
+
+.cell {
+  border-radius:50%;
+  border:3px solid var(--border);
+  position:relative; overflow:hidden;
+  background:rgba(10,22,40,0.9);
+  isolation:isolate;
+  transition:
+    width  0.65s cubic-bezier(.34,1.56,.64,1),
+    height 0.65s cubic-bezier(.34,1.56,.64,1),
+    border-color 0.3s, box-shadow 0.3s;
+}
+.cell.glow   { border-color:var(--cyan);  box-shadow:0 0 30px rgba(0,229,255,0.45); }
+.cell.danger { border-color:var(--red);   box-shadow:0 0 30px rgba(255,45,85,0.5); }
+.cell.gain   { animation:gainPulse 0.5s ease-out; }
+.cell.lose   { animation:losePulse 0.4s ease-out; }
+@keyframes gainPulse { 0%{box-shadow:0 0 0 0 rgba(0,229,255,0)} 40%{box-shadow:0 0 0 14px rgba(0,229,255,0.4)} 100%{box-shadow:0 0 0 0 rgba(0,229,255,0)} }
+@keyframes losePulse { 0%{box-shadow:0 0 0 0 rgba(255,140,0,0)} 40%{box-shadow:0 0 0 10px rgba(255,140,0,0.35)} 100%{box-shadow:0 0 0 0 rgba(255,140,0,0)} }
+
+/* Água — animação mantida, número removido */
+.water { position:absolute; bottom:0; left:0; right:0; background:linear-gradient(180deg,rgba(0,175,215,0.5) 0%,rgba(0,70,130,0.9) 100%); transition:height 0.6s cubic-bezier(.25,.46,.45,.94); border-bottom-left-radius:50%; border-bottom-right-radius:50%; z-index:1; }
+.water::after { content:''; position:absolute; top:-8px; left:-25%; width:150%; height:16px; background:rgba(0,229,255,0.28); border-radius:50%; animation:wave 2s ease-in-out infinite; }
+@keyframes wave { 0%,100%{transform:translateX(0) scaleY(1)} 50%{transform:translateX(7%) scaleY(1.7)} }
+
+/* Bolhas extras na água */
+.bubble {
+  position:absolute; border-radius:50%;
+  background:rgba(0,229,255,0.25); border:1px solid rgba(0,229,255,0.4);
+  animation:bubbleRise var(--dur,2s) ease-in infinite var(--delay,0s);
+  pointer-events:none; z-index:2;
+}
+@keyframes bubbleRise {
+  0%   { transform:translateY(0) scale(1); opacity:0.7; }
+  80%  { opacity:0.4; }
+  100% { transform:translateY(-60px) scale(0.4); opacity:0; }
+}
+
+/* Solutos */
+.dots-layer { position:absolute; inset:0; border-radius:50%; pointer-events:none; z-index:3; }
+.dot {
+  position:absolute; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #ffe566, #ff8c00 60%, #c05000);
+  box-shadow:0 0 10px 3px rgba(255,140,0,0.75), 0 0 22px rgba(255,140,0,0.35);
+  animation:floatDot 2.8s ease-in-out infinite;
+}
+@keyframes floatDot { 0%,100%{transform:translateY(0) scale(1)} 50%{transform:translateY(-5px) scale(1.1)} }
+@keyframes sparkUp  { 0%{opacity:1;transform:translateY(0) scale(1)} 60%{opacity:0.8;transform:translateY(-18px) scale(1.3)} 100%{opacity:0;transform:translateY(-32px) scale(0)} }
+
+/* Badge soluto — centro da célula */
+.solute-badge {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  z-index:5; pointer-events:none;
+  display:flex; flex-direction:column; align-items:center; gap:1px;
+}
+.solute-num { font-family:var(--font-display); font-size:clamp(0.9rem,3.8vw,1.25rem); font-weight:900; color:#ffd000; text-shadow:0 0 14px rgba(255,160,0,1), 0 2px 5px rgba(0,0,0,0.9); line-height:1; }
+.solute-lbl { font-size:0.35rem; color:rgba(255,200,0,0.75); letter-spacing:0.12em; text-transform:uppercase; }
+
+/* Concentração no rodapé */
+.cell-conc { position:absolute; bottom:5%; left:50%; transform:translateX(-50%); font-size:0.4rem; color:rgba(255,255,255,0.65); letter-spacing:0.06em; z-index:5; white-space:nowrap; text-shadow:0 1px 3px rgba(0,0,0,0.95); background:rgba(5,12,20,0.6); padding:2px 6px; border-radius:4px; }
+
+/* Membrana */
+.membrane { width:46px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; }
+.mem-label { font-size:0.36rem; color:var(--dim); text-align:center; line-height:1.5; text-transform:uppercase; letter-spacing:0.06em; }
+.mem-line  { width:4px; height:130px; position:relative; background:repeating-linear-gradient(to bottom,var(--border) 0 6px,transparent 6px 12px); overflow:visible; }
+.flow-arrow { font-size:1.2rem; transition:color 0.3s; line-height:1; }
+.flow-arrow.bounce { animation:arrowBounce 0.35s ease-out; }
+@keyframes arrowBounce { 0%{transform:scale(1)} 50%{transform:scale(1.6)} 100%{transform:scale(1)} }
+
+/* Partículas membrana */
+.particle { position:absolute; width:8px; height:8px; border-radius:50%; background:radial-gradient(circle at 40% 40%,#a0f4ff,var(--cyan)); box-shadow:0 0 8px var(--cyan); pointer-events:none; }
+.particle.p-fwd { left:-46px; animation:p_fwd 0.55s ease-in-out forwards; }
+.particle.p-rev { left:4px;   animation:p_rev 0.55s ease-in-out forwards; }
+@keyframes p_fwd { 0%{opacity:1;transform:translateX(0)} 100%{opacity:0;transform:translateX(56px)} }
+@keyframes p_rev { 0%{opacity:1;transform:translateX(0)} 100%{opacity:0;transform:translateX(-56px)} }
+
+/* Osmose hint */
+.osmose-hint { display:flex; align-items:center; justify-content:center; gap:6px; padding:7px 10px; background:var(--panel); border:1px solid var(--border); border-radius:8px; font-size:0.5rem; color:var(--dim); letter-spacing:0.05em; transition:all 0.3s; }
+.osmose-hint.eq { border-color:var(--green); color:var(--green); }
+.osmose-arrow   { font-size:1rem; }
+
+/* Barras de concentração */
+.conc-section { display:flex; flex-direction:column; gap:6px; }
+.conc-bars    { display:flex; gap:8px; }
+.cbar-wrap    { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; font-size:0.44rem; color:var(--dim); letter-spacing:0.06em; }
+.cbar-track   { width:100%; height:8px; background:var(--panel); border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+.cbar-fill    { height:100%; border-radius:4px; transition:width 0.5s ease; }
+.cbar-a .cbar-fill { background:linear-gradient(90deg,#004f78,var(--cyan)); }
+.cbar-b .cbar-fill { background:linear-gradient(90deg,#6a1e00,var(--orange)); }
+.cbar-val { font-family:var(--font-display); font-size:0.58rem; font-weight:700; }
+.cbar-a .cbar-val { color:var(--cyan); }
+.cbar-b .cbar-val { color:var(--orange); }
+
+/* Botões */
+.btns-main { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.btns-sub  { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.btn { font-family:var(--font-mono); font-size:0.62rem; letter-spacing:0.04em; padding:0 12px; border:2px solid var(--border); border-radius:12px; background:var(--panel); color:var(--text); cursor:pointer; min-height:56px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; line-height:1.4; gap:3px; touch-action:manipulation; transition:transform 0.12s, opacity 0.12s, background 0.15s; -webkit-tap-highlight-color:transparent; -webkit-appearance:none; appearance:none; }
+.btn:active  { transform:scale(0.91); opacity:0.8; }
+.btn:disabled{ opacity:0.28; cursor:not-allowed; }
+.btn-hint    { font-size:0.44rem; opacity:0.6; }
+.btn-a { border-color:var(--cyan);   color:var(--cyan);   background:rgba(0,229,255,0.06); }
+.btn-b { border-color:var(--orange); color:var(--orange); background:rgba(255,140,0,0.06); }
+.btn-a:not(:disabled):active { background:rgba(0,229,255,0.2); }
+.btn-b:not(:disabled):active { background:rgba(255,140,0,0.2); }
+.btn-r { border-color:var(--dim);   color:var(--dim);   font-size:0.58rem; min-height:44px; }
+.btn-g { border-color:var(--green); color:var(--green); font-size:0.56rem; min-height:44px; }
+.btn-help { border-color:var(--green); color:var(--green); min-height:34px; padding:6px 14px; font-size:0.55rem; }
+
+/* Resultado */
+#result { min-height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; }
+.res-msg { font-family:var(--font-display); font-size:clamp(0.8rem,3vw,0.95rem); font-weight:700; letter-spacing:0.04em; text-align:center; animation:pglow 1.5s ease-in-out infinite; }
+@keyframes pglow { 0%,100%{opacity:1} 50%{opacity:0.65} }
+.res-win  { color:var(--green); }
+.res-fail { color:var(--red); }
+.res-sub  { font-size:0.54rem; color:var(--dim); text-align:center; }
+
+/* Settings — somente velocidade */
+.settings { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:9px; }
+.set-row  { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.set-lbl  { font-size:0.5rem; color:var(--dim); letter-spacing:0.08em; text-transform:uppercase; white-space:nowrap; flex-shrink:0; }
+.set-right{ display:flex; align-items:center; gap:8px; flex:1; justify-content:flex-end; }
+input[type=range] { -webkit-appearance:none; appearance:none; height:24px; background:transparent; width:100px; touch-action:pan-x; cursor:pointer; padding:0; }
+input[type=range]::-webkit-slider-runnable-track { height:4px; background:var(--border); border-radius:2px; }
+input[type=range]::-moz-range-track              { height:4px; background:var(--border); border-radius:2px; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:22px; height:22px; border-radius:50%; background:var(--cyan); cursor:pointer; margin-top:-9px; box-shadow:0 0 8px rgba(0,229,255,0.5); }
+input[type=range]::-moz-range-thumb     { width:22px; height:22px; border-radius:50%; background:var(--cyan); border:none; cursor:pointer; }
+.set-val { font-family:var(--font-display); font-size:0.76rem; font-weight:700; color:var(--cyan); min-width:36px; text-align:right; }
+
+/* Log */
+.log { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:9px 12px; max-height:64px; overflow-y:auto; -webkit-overflow-scrolling:touch; font-size:0.52rem; color:var(--dim); text-align:left; scrollbar-width:thin; }
+.log-e    { margin-bottom:3px; line-height:1.5; }
+.log-e.eq { color:var(--green); }
+
+/* Quick guide */
+.qguide { background:var(--panel); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+.qguide-hdr { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; cursor:pointer; min-height:44px; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
+.qguide-hdr.open { border-bottom:1px solid var(--border); }
+.qguide-title { font-size:0.5rem; color:var(--dim); letter-spacing:0.1em; text-transform:uppercase; font-family:var(--font-display); font-weight:700; }
+.qguide-arrow { color:var(--dim); font-size:0.6rem; transition:transform 0.2s; }
+.qguide-arrow.open { transform:rotate(180deg); }
+.qguide-body { display:none; padding:10px; }
+.qguide-body.open { display:block; }
+.qsteps { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+.qs   { background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:8px; padding:8px 9px; }
+.qs-n { font-family:var(--font-display); font-size:0.58rem; font-weight:700; color:var(--cyan); margin-bottom:3px; }
+.qs-t { font-size:0.52rem; color:var(--dim); line-height:1.5; }
+.qs-t strong { color:var(--text); }
+
+/* Share bar */
+.share-bar { background:linear-gradient(135deg,rgba(0,229,255,0.04),rgba(0,255,157,0.04)); border:1px solid rgba(0,255,157,0.18); border-radius:10px; padding:9px 13px; display:flex; align-items:center; gap:9px; }
+.share-bar-txt { flex:1; font-size:0.5rem; color:var(--dim); line-height:1.5; }
+.share-bar-txt strong { color:var(--green); display:block; margin-bottom:1px; font-size:0.53rem; }
+.share-btn { font-family:var(--font-mono); font-size:0.5rem; border:1px solid var(--green); color:var(--green); background:rgba(0,255,157,0.06); border-radius:8px; padding:7px 11px; cursor:pointer; white-space:nowrap; touch-action:manipulation; -webkit-appearance:none; appearance:none; transition:background 0.15s; -webkit-tap-highlight-color:transparent; }
+.share-btn:active { background:rgba(0,255,157,0.2); }
+
+/* ══ FOGOS DE ARTIFÍCIO — tela toda ══ */
+#fireworks-canvas {
+  position:fixed; inset:0; z-index:9999;
+  pointer-events:none;
+  display:none;
+}
+
+/* Modal */
+.overlay { position:fixed; inset:0; z-index:1000; background:rgba(5,12,20,0.93); display:flex; align-items:flex-end; justify-content:center; -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); padding-bottom:var(--safe-bottom); }
+.sheet { background:var(--panel); border:1px solid var(--border); border-radius:20px 20px 0 0; width:100%; max-width:480px; max-height:min(90vh,90dvh); overflow-y:auto; -webkit-overflow-scrolling:touch; scrollbar-width:thin; animation:shu .3s cubic-bezier(.25,.46,.45,.94); }
+@keyframes shu { from{transform:translateY(100%)} to{transform:translateY(0)} }
+.sheet-handle { width:40px; height:5px; background:var(--border); border-radius:3px; margin:12px auto 6px; }
+.sheet-hdr { display:flex; align-items:center; justify-content:space-between; padding:0 18px 13px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--panel); z-index:2; }
+.sheet-title { font-family:var(--font-display); font-size:0.8rem; font-weight:700; color:var(--green); letter-spacing:0.06em; }
+.sheet-close { background:none; border:1px solid var(--border); color:var(--dim); width:44px; height:44px; border-radius:10px; cursor:pointer; font-size:1rem; display:flex; align-items:center; justify-content:center; touch-action:manipulation; -webkit-tap-highlight-color:transparent; -webkit-appearance:none; appearance:none; }
+.sheet-body { padding:13px 18px 32px; }
+.tabs { display:flex; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; border-bottom:1px solid var(--border); margin-bottom:13px; }
+.tabs::-webkit-scrollbar { display:none; }
+.tab { font-family:var(--font-mono); font-size:0.52rem; letter-spacing:0.08em; text-transform:uppercase; padding:10px 13px; background:none; border:none; border-bottom:2px solid transparent; color:var(--dim); cursor:pointer; white-space:nowrap; min-height:44px; margin-bottom:-1px; touch-action:manipulation; -webkit-tap-highlight-color:transparent; -webkit-appearance:none; appearance:none; }
+.tab.on { color:var(--cyan); border-bottom-color:var(--cyan); }
+.tpanel { display:none; }
+.tpanel.on { display:block; }
+.sec-title { font-family:var(--font-display); font-size:0.56rem; font-weight:700; color:var(--cyan); text-transform:uppercase; letter-spacing:0.12em; margin:14px 0 9px; display:flex; align-items:center; gap:8px; }
+.sec-title:first-child { margin-top:0; }
+.sec-title::after { content:''; flex:1; height:1px; background:var(--border); }
+.txt  { font-size:0.63rem; color:var(--text); line-height:1.75; margin-bottom:8px; }
+.hl   { background:rgba(0,229,255,0.06); border-left:3px solid var(--cyan); padding:9px 13px; border-radius:0 8px 8px 0; font-size:0.62rem; color:var(--text); line-height:1.7; margin:8px 0; }
+.wn   { background:rgba(255,140,0,0.07); border-left:3px solid var(--orange); padding:9px 13px; border-radius:0 8px 8px 0; font-size:0.62rem; color:var(--text); line-height:1.7; margin:8px 0; }
+.objlist { display:flex; flex-direction:column; gap:6px; }
+.objitem { display:flex; gap:10px; align-items:flex-start; font-size:0.6rem; padding:9px 11px; border-radius:9px; border:1px solid var(--border); background:rgba(255,255,255,0.015); line-height:1.55; }
+.objicon { font-size:1rem; min-width:20px; text-align:center; }
+.objtxt strong { color:var(--text); }
+.objtxt { color:var(--dim); }
+.steps { display:flex; flex-direction:column; gap:7px; }
+.step  { display:flex; gap:10px; align-items:flex-start; background:rgba(255,255,255,0.02); border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+.snum  { font-family:var(--font-display); font-size:0.88rem; font-weight:900; color:var(--cyan); min-width:22px; margin-top:1px; }
+.stit  { font-size:0.63rem; font-weight:700; color:var(--green); margin-bottom:2px; }
+.sdesc { font-size:0.59rem; color:var(--dim); line-height:1.6; }
+.sdesc strong { color:var(--orange); }
+.glossary { display:flex; flex-direction:column; }
+.gi    { display:flex; flex-direction:column; gap:3px; padding:8px 0; border-bottom:1px solid rgba(26,58,92,0.5); font-size:0.6rem; }
+.gterm { color:var(--orange); font-weight:700; }
+.gdef  { color:var(--dim); line-height:1.55; }
+.kgrid { display:flex; flex-direction:column; gap:6px; }
+.krow  { display:flex; gap:9px; align-items:center; font-size:0.6rem; }
+.k     { background:rgba(0,229,255,0.08); border:1px solid var(--border); border-radius:6px; padding:5px 9px; font-family:var(--font-mono); font-size:0.56rem; color:var(--cyan); min-width:78px; text-align:center; white-space:nowrap; flex-shrink:0; }
+.kd    { color:var(--dim); line-height:1.5; }
+</style>
+</head>
+<body>
+
+<!-- Canvas de fogos de artifício (tela toda) -->
+<canvas id="fireworks-canvas"></canvas>
+
+<div class="wrap">
+
+  <header>
+    <h1>🧬 OSMOSE</h1>
+    <p class="subtitle">Simulação de Transporte Osmótico</p>
+    <div class="header-actions">
+      <button class="btn btn-help" onclick="openSheet()">📖 Como Jogar</button>
+    </div>
+  </header>
+
+  <div class="share-bar">
+    <div class="share-bar-txt">
+      <strong>🔗 Jogar Online</strong>
+      Compartilhe — funciona em qualquer celular ou PC!
+    </div>
+    <button class="share-btn" onclick="shareGame()">📤 Compartilhar</button>
+  </div>
+
+  <!-- Info bar: só Movimentos e Δ Conc. -->
+  <div class="info-bar">
+    <div class="info-cell">
+      <div class="info-lbl">Movimentos</div>
+      <div class="info-val" id="moves" style="color:var(--green)">0</div>
+    </div>
+    <div class="info-cell">
+      <div class="info-lbl">Δ Conc.</div>
+      <div class="info-val" id="delta" style="color:var(--orange)">—</div>
+    </div>
+  </div>
+
+  <div class="scenarios">
+    <button class="scen-btn active" onclick="load(0)">Padrão</button>
+    <button class="scen-btn" onclick="load(1)">Extremo</button>
+    <button class="scen-btn" onclick="load(2)">Quase<br>Equil.</button>
+    <button class="scen-btn" onclick="load(3)">Invertido</button>
+  </div>
+
+  <!-- STAGE -->
+  <div class="stage">
+
+    <div class="cell-wrap">
+      <div class="cell-lbl" id="lbl-a">CÉLULA A</div>
+      <div class="cell" id="cellA">
+        <div class="water" id="fillA"></div>
+        <div class="dots-layer" id="dotsA"></div>
+        <!-- Soluto centralizado — sem badge de água -->
+        <div class="solute-badge">
+          <div class="solute-num" id="sc-A">—</div>
+          <div class="solute-lbl">🟡 SOLUTO</div>
+        </div>
+        <div class="cell-conc" id="cA">conc: —</div>
+      </div>
+    </div>
+
+    <div class="membrane">
+      <div class="mem-label">Memb.<br>Semi<br>Perm.</div>
+      <div class="mem-line" id="memline"></div>
+      <div class="flow-arrow" id="arrow">→</div>
+    </div>
+
+    <div class="cell-wrap">
+      <div class="cell-lbl" id="lbl-b">CÉLULA B</div>
+      <div class="cell" id="cellB">
+        <div class="water" id="fillB"></div>
+        <div class="dots-layer" id="dotsB"></div>
+        <div class="solute-badge">
+          <div class="solute-num" id="sc-B">—</div>
+          <div class="solute-lbl">🟡 SOLUTO</div>
+        </div>
+        <div class="cell-conc" id="cB">conc: —</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Dica + barras -->
+  <div class="conc-section">
+    <div class="osmose-hint" id="osmose-hint">
+      <span id="hint-icon">💧</span>
+      <span class="osmose-arrow" id="hint-arrow">→</span>
+      <span id="hint-text">A água flui para maior concentração</span>
+    </div>
+    <div class="conc-bars">
+      <div class="cbar-wrap cbar-a">
+        <div>CONC. A</div>
+        <div class="cbar-track"><div class="cbar-fill" id="bar-a"></div></div>
+        <div class="cbar-val" id="val-a">—</div>
+      </div>
+      <div class="cbar-wrap cbar-b">
+        <div>CONC. B</div>
+        <div class="cbar-track"><div class="cbar-fill" id="bar-b"></div></div>
+        <div class="cbar-val" id="val-b">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="btns-main">
+    <button class="btn btn-a" id="btn-ab" onclick="move(true)">
+      💧 A → B
+      <span class="btn-hint">mover água para B</span>
+    </button>
+    <button class="btn btn-b" id="btn-ba" onclick="move(false)">
+      💧 B → A
+      <span class="btn-hint">mover água para A</span>
+    </button>
+  </div>
+
+  <div class="btns-sub">
+    <button class="btn btn-r" onclick="reset()">↺ Reiniciar</button>
+    <button class="btn btn-g" onclick="toggleGuide()">📋 Guia Rápido</button>
+  </div>
+
+  <div id="result"></div>
+
+  <!-- Settings — só velocidade -->
+  <div class="settings">
+    <div class="set-row">
+      <div class="set-lbl">Velocidade</div>
+      <div class="set-right">
+        <input type="range" id="spd-range" min="1" max="5" value="1" oninput="setSpdLabel(this.value)">
+        <div class="set-val" id="spd-val">1×</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="qguide">
+    <div class="qguide-hdr" id="qhdr" onclick="toggleGuide()">
+      <div class="qguide-title">📋 Guia Rápido</div>
+      <div class="qguide-arrow" id="qarrow">▼</div>
+    </div>
+    <div class="qguide-body" id="qbody">
+      <div class="qsteps">
+        <div class="qs"><div class="qs-n">01</div><div class="qs-t">Escolha um <strong>cenário</strong> acima.</div></div>
+        <div class="qs"><div class="qs-n">02</div><div class="qs-t"><strong>Pontos laranjas</strong> = soluto. Ficam fixos!</div></div>
+        <div class="qs"><div class="qs-n">03</div><div class="qs-t">A célula <strong>hipertônica</strong> tem mais soluto.</div></div>
+        <div class="qs"><div class="qs-n">04</div><div class="qs-t">Siga a <strong>seta</strong> para mover a água.</div></div>
+        <div class="qs"><div class="qs-n">05</div><div class="qs-t">Célula que <strong>recebe</strong> → fica <strong>maior</strong>!</div></div>
+        <div class="qs"><div class="qs-n">06</div><div class="qs-t">Célula que <strong>perde</strong> → fica <strong>menor</strong>!</div></div>
+        <div class="qs"><div class="qs-n">07</div><div class="qs-t">Iguale as <strong>barras</strong> de concentração.</div></div>
+        <div class="qs"><div class="qs-n">08</div><div class="qs-t"><strong>⚠ Não esvazie</strong> — game over!</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="log" id="log"></div>
+
+</div>
+
+<!-- Modal -->
+<div class="overlay" id="overlay" onclick="overlayClick(event)" style="display:none">
+  <div class="sheet" id="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-hdr">
+      <div class="sheet-title">📖 Guia Completo</div>
+      <button class="sheet-close" onclick="closeSheet()">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="tabs">
+        <button class="tab on"  onclick="tab('obj',this)">🎯 Objetivo</button>
+        <button class="tab"     onclick="tab('paso',this)">📋 Como Jogar</button>
+        <button class="tab"     onclick="tab('glos',this)">🔬 Glossário</button>
+        <button class="tab"     onclick="tab('ctrl',this)">👆 Controles</button>
+        <button class="tab"     onclick="tab('tips',this)">💡 Dicas</button>
+      </div>
+
+      <div class="tpanel on" id="tp-obj">
+        <div class="sec-title">O que é Osmose?</div>
+        <p class="txt">Osmose é o movimento da água por uma membrana semipermeável, do meio com <strong style="color:var(--cyan)">menor concentração</strong> para o de <strong style="color:var(--orange)">maior concentração</strong>.</p>
+        <div class="hl">💧 A água flui para onde há mais soluto — até as concentrações se igualarem!</div>
+        <div class="hl">🟡 <strong>Soluto = pontos laranjas.</strong> A célula <strong>hipertônica</strong> sempre começa com <strong>mais soluto</strong> — ela atrai mais água!</div>
+        <div class="sec-title">Objetivo</div>
+        <div class="objlist">
+          <div class="objitem"><div class="objicon">⚖</div><div class="objtxt"><strong>Equilíbrio Osmótico</strong> — iguale a concentração das duas células.</div></div>
+          <div class="objitem"><div class="objicon">📏</div><div class="objtxt"><strong>Veja as células mudarem de tamanho!</strong> A que ganha água incha; a que perde encolhe.</div></div>
+          <div class="objitem"><div class="objicon">🏆</div><div class="objtxt"><strong>Menos toques = melhor pontuação.</strong></div></div>
+          <div class="objitem"><div class="objicon">⚠</div><div class="objtxt"><strong>Não esvazie</strong> uma célula — game over!</div></div>
+        </div>
+      </div>
+
+      <div class="tpanel" id="tp-paso">
+        <div class="sec-title">Passo a Passo</div>
+        <div class="steps">
+          <div class="step"><div class="snum">1</div><div><div class="stit">Escolha um Cenário</div><div class="sdesc">Padrão, Extremo, Quase Equil. ou Invertido.</div></div></div>
+          <div class="step"><div class="snum">2</div><div><div class="stit">Observe as Células</div><div class="sdesc">A célula com <strong>mais pontos laranjas</strong> é a hipertônica — ela atrai água. A com menos é a hipotônica.</div></div></div>
+          <div class="step"><div class="snum">3</div><div><div class="stit">Siga a Seta</div><div class="sdesc">A seta e a dica mostram a direção natural da osmose. Sempre mova no sentido da seta!</div></div></div>
+          <div class="step"><div class="snum">4</div><div><div class="stit">Mova Água</div><div class="sdesc">Toque <strong>💧 A→B</strong> ou <strong>💧 B→A</strong>. Veja as células crescerem e encolherem!</div></div></div>
+          <div class="step"><div class="snum">5</div><div><div class="stit">Monitore as Barras</div><div class="sdesc">Iguale as barras de concentração para vencer.</div></div></div>
+          <div class="step"><div class="snum">6</div><div><div class="stit">Vitória + Fogos! 🎆</div><div class="sdesc">Quando as concentrações se igualam, fogos de artifício explodem na tela!</div></div></div>
+        </div>
+      </div>
+
+      <div class="tpanel" id="tp-glos">
+        <div class="sec-title">Conceitos</div>
+        <div class="glossary">
+          <div class="gi"><div class="gterm">Osmose</div><div class="gdef">Movimento da água pela membrana do meio menos concentrado para o mais concentrado.</div></div>
+          <div class="gi"><div class="gterm">Soluto (🟡 pontos laranjas)</div><div class="gdef">Substância dissolvida. Fixo — não atravessa a membrana.</div></div>
+          <div class="gi"><div class="gterm">Concentração</div><div class="gdef">c = soluto ÷ água. Quanto maior, mais atrai água.</div></div>
+          <div class="gi"><div class="gterm">Hipotônica</div><div class="gdef">Menor concentração — perde água, encolhe. Tem MENOS pontos laranjas.</div></div>
+          <div class="gi"><div class="gterm">Hipertônica</div><div class="gdef">Maior concentração — ganha água, incha. Tem MAIS pontos laranjas.</div></div>
+          <div class="gi"><div class="gterm">Isotônica</div><div class="gdef">Concentrações iguais nos dois lados = equilíbrio!</div></div>
+        </div>
+      </div>
+
+      <div class="tpanel" id="tp-ctrl">
+        <div class="sec-title">Botões</div>
+        <div class="kgrid">
+          <div class="krow"><div class="k">💧 A→B</div><div class="kd">Move água de A para B</div></div>
+          <div class="krow"><div class="k">💧 B→A</div><div class="kd">Move água de B para A</div></div>
+          <div class="krow"><div class="k">↺ Reiniciar</div><div class="kd">Recomeça o cenário</div></div>
+          <div class="krow"><div class="k">📤 Compartilhar</div><div class="kd">Share nativo ou copia link</div></div>
+        </div>
+        <div class="sec-title">Slider</div>
+        <div class="kgrid">
+          <div class="krow"><div class="k">Velocidade</div><div class="kd">Unidades de água por toque (1×–5×)</div></div>
+        </div>
+        <div class="sec-title">Instalar como App</div>
+        <div class="hl"><strong>iPhone:</strong> Safari → Compartilhar → Adicionar à Tela de Início 🎉</div>
+        <div class="hl"><strong>Android:</strong> Chrome → ⋮ Menu → Adicionar à tela inicial 🎉</div>
+      </div>
+
+      <div class="tpanel" id="tp-tips">
+        <div class="sec-title">Estratégia</div>
+        <div class="hl">🧮 <strong>Ponto de equilíbrio:</strong> Água ideal em A = sA × (wA+wB) ÷ (sA+sB)</div>
+        <div class="hl">📊 Iguale as <strong>barras de concentração</strong> — quando se alinham, é equilíbrio!</div>
+        <div class="wn">⚠ <strong>Siga sempre a seta</strong> — mover ao contrário piora o desequilíbrio.</div>
+        <div class="wn">💀 <strong>Velocidade 5× + pouca água</strong> = risco de esvaziar a célula!</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+//  OSMOSE GAME
+//  Mudanças aplicadas:
+//  1. Tolerância removida — equilíbrio detectado quando Δconc ≤ 0.05 (fixo)
+//  2. Fogos de artifício animados ao vencer
+//  3. Badge de água removido — apenas animação da água visível
+//  4. Soluto VISUAL inicial diferente entre as células:
+//     hipertônica começa com MAIS pontos laranjas que a hipotônica
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Cenários — dotsA/dotsB refletem qual é hipertônica (mais soluto real = mais visual)
+// Célula com maior sA/wA (hipertônica) recebe mais dots visuais iniciais
+const SC = [
+  // Padrão: B é hipertônica (sB/wB=2.0) vs A (sA/wA=0.1) — B começa com mais dots
+  { name:'Padrão',       wA:20, wB:5,  sA:2,  sB:10, dotsA:10, dotsB:22 },
+  // Extremo: B é hipertônica (30/1=30) vs A (1/40=0.025)
+  { name:'Extremo',      wA:40, wB:1,  sA:1,  sB:30, dotsA:8,  dotsB:28 },
+  // Quase Equil.: B levemente hipertônica (6/8=0.75) vs A (4/12=0.33)
+  { name:'Quase Equil.', wA:12, wB:8,  sA:4,  sB:6,  dotsA:12, dotsB:18 },
+  // Invertido: A é hipertônica (10/5=2.0) vs B (2/20=0.1) — A começa com mais dots
+  { name:'Invertido',    wA:5,  wB:20, sA:10, sB:2,  dotsA:22, dotsB:10 },
+];
+
+const SZ_MIN = 70, SZ_MAX = 180;
+const DOTS_FINAL = 6;   // dots ao atingir equilíbrio
+const TOL = 0.05;       // tolerância fixa (sem slider)
+
+let wA, wB, sA, sB;
+let dotsA_vis, dotsB_vis, dotsA_init, dotsB_init;
+let prevDelta = Infinity;
+let moves=0, done=false, sc=0;
+let dotPosA=[], dotPosB=[];
+
+// ── Load ───────────────────────────────────────────────────────────────────────
+function load(i){
+  sc=i; const s=SC[i];
+  wA=s.wA; wB=s.wB; sA=s.sA; sB=s.sB;
+  dotsA_vis=s.dotsA; dotsB_vis=s.dotsB;
+  dotsA_init=s.dotsA; dotsB_init=s.dotsB;
+  prevDelta=Math.abs(sA/wA-sB/wB);
+  moves=0; done=false;
+  document.getElementById('result').innerHTML='';
+  document.getElementById('log').innerHTML='';
+  document.querySelectorAll('.scen-btn').forEach((b,j)=>b.classList.toggle('active',j===i));
+  ['cellA','cellB'].forEach(id=>document.getElementById(id).classList.remove('glow','danger','gain','lose'));
+  const szA=cellSize(wA), szB=cellSize(wB);
+  dotPosA=makeDotPositions(s.dotsA,szA);
+  dotPosB=makeDotPositions(s.dotsB,szB);
+  buildDots('dotsA',dotPosA,dotsA_vis,szA);
+  buildDots('dotsB',dotPosB,dotsB_vis,szB);
+  render();
+  addLog(`Cenário "${s.name}" — A:${wA}💧 sA:${sA} | B:${wB}💧 sB:${sB}`);
+}
+
+function makeDotPositions(n,szPx){
+  const pos=[];
+  for(let i=0;i<n;i++){
+    const ring=Math.floor(i/6);
+    const inRing=i%6;
+    const total=Math.min(6,n-ring*6);
+    const a=(inRing/total)*2*Math.PI+ring*0.52+0.2;
+    const rFrac=ring===0?0.28:ring===1?0.16:0.08;
+    const r=szPx*rFrac;
+    const dotSz=Math.max(9,Math.min(14,szPx*0.09));
+    pos.push({x:szPx/2+r*Math.cos(a)-dotSz/2, y:szPx/2+r*Math.sin(a)-dotSz/2, delay:i*0.18});
+  }
+  return pos;
+}
+
+function buildDots(layerId,positions,visible,szPx){
+  const layer=document.getElementById(layerId);
+  layer.innerHTML='';
+  const dotSz=Math.max(9,Math.min(14,szPx*0.09));
+  positions.forEach((pos,i)=>{
+    const d=document.createElement('div');
+    d.className='dot';
+    d.style.cssText=`width:${dotSz}px;height:${dotSz}px;left:${pos.x}px;top:${pos.y}px;animation-delay:${pos.delay}s;transition:opacity .55s ease,transform .55s ease;opacity:${i<visible?1:0};transform:${i<visible?'scale(1)':'scale(0)'};`;
+    layer.appendChild(d);
+  });
+}
+
+function updateDotVisibility(layerId,visible){
+  const dots=document.getElementById(layerId).querySelectorAll('.dot');
+  dots.forEach((d,i)=>{
+    d.style.opacity=i<visible?'1':'0';
+    d.style.transform=i<visible?'scale(1)':'scale(0.2)';
+  });
+}
+
+// ── Move ───────────────────────────────────────────────────────────────────────
+function move(aToB){
+  if(done) return;
+  const step=parseInt(document.getElementById('spd-range').value,10);
+  let gainId, loseId;
+  if(aToB){
+    const amt=Math.min(step,wA);
+    if(amt<=0){ addLog('⚠ Célula A sem água!'); return; }
+    wA-=amt; wB+=amt; gainId='cellB'; loseId='cellA';
+    spawnParticles(false,amt);
+    addLog(`Mov.${++moves}: ${amt}💧 A→B | A=${wA}💧 B=${wB}💧`);
+  } else {
+    const amt=Math.min(step,wB);
+    if(amt<=0){ addLog('⚠ Célula B sem água!'); return; }
+    wB-=amt; wA+=amt; gainId='cellA'; loseId='cellB';
+    spawnParticles(true,amt);
+    addLog(`Mov.${++moves}: ${amt}💧 B→A | A=${wA}💧 B=${wB}💧`);
+  }
+
+  // Decay de solutos visuais
+  const newDelta=(wA>0&&wB>0)?Math.abs(sA/wA-sB/wB):prevDelta;
+  const deltaMax=Math.abs(SC[sc].sA/SC[sc].wA-SC[sc].sB/SC[sc].wB);
+  const progress=Math.max(0,Math.min(1,1-newDelta/Math.max(deltaMax,0.001)));
+  const targetA=Math.round(dotsA_init-(dotsA_init-DOTS_FINAL)*progress);
+  const targetB=Math.round(dotsB_init-(dotsB_init-DOTS_FINAL)*progress);
+  if(targetA<dotsA_vis){ dotsA_vis=targetA; updateDotVisibility('dotsA',dotsA_vis); flashDissolve('dotsA'); }
+  if(targetB<dotsB_vis){ dotsB_vis=targetB; updateDotVisibility('dotsB',dotsB_vis); flashDissolve('dotsB'); }
+  prevDelta=newDelta;
+
+  pulse(gainId,'gain'); pulse(loseId,'lose');
+  const arr=document.getElementById('arrow');
+  arr.classList.remove('bounce'); void arr.offsetWidth; arr.classList.add('bounce');
+  setTimeout(()=>arr.classList.remove('bounce'),400);
+
+  render(); check();
+}
+
+function flashDissolve(layerId){
+  const layer=document.getElementById(layerId);
+  const visible=Array.from(layer.querySelectorAll('.dot')).filter(d=>parseFloat(d.style.opacity)>0.5);
+  if(!visible.length) return;
+  const target=visible[Math.floor(Math.random()*visible.length)];
+  const spark=document.createElement('div');
+  spark.style.cssText=`position:absolute;width:6px;height:6px;border-radius:50%;background:#ffd000;box-shadow:0 0 8px #ffa500;left:${target.style.left};top:${target.style.top};pointer-events:none;z-index:10;animation:sparkUp .6s ease-out forwards;`;
+  layer.appendChild(spark);
+  setTimeout(()=>{ if(spark.parentNode) spark.parentNode.removeChild(spark); },650);
+}
+
+function pulse(id,cls){
+  const el=document.getElementById(id);
+  el.classList.remove('gain','lose'); void el.offsetWidth;
+  el.classList.add(cls);
+  setTimeout(()=>el.classList.remove(cls),550);
+}
+
+function reset(){ stopFireworks(); load(sc); }
+
+// ── Check ──────────────────────────────────────────────────────────────────────
+function check(){
+  if(wA<=0||wB<=0){
+    const who=wA<=0?'A':'B';
+    showResult(false,`⚠ Célula ${who} esvaziou! Game Over.`);
+    document.getElementById(wA<=0?'cellA':'cellB').classList.add('danger');
+    done=true; return;
+  }
+  const d=Math.abs(sA/wA-sB/wB);
+  if(d<=TOL){
+    dotsA_vis=DOTS_FINAL; dotsB_vis=DOTS_FINAL;
+    updateDotVisibility('dotsA',DOTS_FINAL);
+    updateDotVisibility('dotsB',DOTS_FINAL);
+    showResult(true,`🏆 Equilíbrio em ${moves} movimentos!`);
+    document.getElementById('cellA').classList.add('glow');
+    document.getElementById('cellB').classList.add('glow');
+    addLog(`=== EQUILÍBRIO em ${moves} movimentos ===`,true);
+    done=true;
+    launchFireworks();
+    if(typeof navigator.vibrate==='function') try{navigator.vibrate([80,40,80,40,120]);}catch(e){}
+  }
+}
+
+// ── Célula Size ────────────────────────────────────────────────────────────────
+function cellSize(w){
+  const tot=wA+wB;
+  const frac=Math.max(w,0)/Math.max(tot,1);
+  const sz=SZ_MIN+Math.pow(frac,0.65)*(SZ_MAX-SZ_MIN)*2;
+  return Math.max(SZ_MIN,Math.min(SZ_MAX,Math.round(sz)));
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────────
+function render(){
+  const szA=cellSize(wA), szB=cellSize(wB);
+  const cA=document.getElementById('cellA'), cB=document.getElementById('cellB');
+  cA.style.width=szA+'px'; cA.style.height=szA+'px';
+  cB.style.width=szB+'px'; cB.style.height=szB+'px';
+
+  const fA=Math.max(10,Math.min(92,wA/(wA+sA)*88+8));
+  const fB=Math.max(10,Math.min(92,wB/(wB+sB)*88+8));
+  document.getElementById('fillA').style.height=fA+'%';
+  document.getElementById('fillB').style.height=fB+'%';
+
+  // Sem badge de água — só soluto e concentração
+  document.getElementById('sc-A').textContent=dotsA_vis;
+  document.getElementById('sc-B').textContent=dotsB_vis;
+  const concA=wA>0?(sA/wA).toFixed(3):'∞';
+  const concB=wB>0?(sB/wB).toFixed(3):'∞';
+  document.getElementById('cA').textContent='conc: '+concA;
+  document.getElementById('cB').textContent='conc: '+concB;
+
+  const delta=(wA>0&&wB>0)?Math.abs(sA/wA-sB/wB).toFixed(4):'—';
+  document.getElementById('delta').textContent=delta;
+  document.getElementById('moves').textContent=moves;
+
+  const arr=document.getElementById('arrow');
+  const hint=document.getElementById('osmose-hint');
+  const hTxt=document.getElementById('hint-text');
+  const hArr=document.getElementById('hint-arrow');
+  if(wA>0&&wB>0){
+    const vA=sA/wA, vB=sB/wB;
+    if(vA<vB){
+      arr.textContent='→'; arr.style.color='var(--cyan)';
+      hArr.textContent='→'; hint.classList.remove('eq');
+      hTxt.textContent='Água flui A→B (A é hipotônica)';
+    } else if(vA>vB){
+      arr.textContent='←'; arr.style.color='var(--orange)';
+      hArr.textContent='←'; hint.classList.remove('eq');
+      hTxt.textContent='Água flui B→A (B é hipotônica)';
+    } else {
+      arr.textContent='⇌'; arr.style.color='var(--green)';
+      hArr.textContent='⇌'; hint.classList.add('eq');
+      hTxt.textContent='⚖ Equilíbrio osmótico!';
+    }
+  }
+
+  const mxC=Math.max(sA/Math.max(wA,1),sB/Math.max(wB,1),0.001);
+  document.getElementById('bar-a').style.width=Math.min((sA/Math.max(wA,1))/mxC*100,100)+'%';
+  document.getElementById('bar-b').style.width=Math.min((sB/Math.max(wB,1))/mxC*100,100)+'%';
+  document.getElementById('val-a').textContent=concA;
+  document.getElementById('val-b').textContent=concB;
+
+  if(wA>0&&wB>0){
+    const vA=sA/wA,vB=sB/wB;
+    document.getElementById('lbl-a').textContent='CÉLULA A — '+(vA<vB?'HIPOTÔNICA':vA>vB?'HIPERTÔNICA':'ISOTÔNICA');
+    document.getElementById('lbl-b').textContent='CÉLULA B — '+(vB>vA?'HIPERTÔNICA':vB<vA?'HIPOTÔNICA':'ISOTÔNICA');
+  }
+
+  const bAB=document.getElementById('btn-ab'), bBA=document.getElementById('btn-ba');
+  if(done||wA<=0) bAB.setAttribute('disabled',''); else bAB.removeAttribute('disabled');
+  if(done||wB<=0) bBA.setAttribute('disabled',''); else bBA.removeAttribute('disabled');
+}
+
+// ── Partículas membrana ────────────────────────────────────────────────────────
+function spawnParticles(rev,qty){
+  const mem=document.getElementById('memline');
+  const n=Math.min(qty,5);
+  for(let i=0;i<n;i++){
+    setTimeout(()=>{
+      const p=document.createElement('div');
+      p.className='particle '+(rev?'p-rev':'p-fwd');
+      p.style.top=(12+Math.random()*100)+'px';
+      mem.appendChild(p);
+      setTimeout(()=>{ if(p.parentNode) p.parentNode.removeChild(p); },700);
+    },i*80);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  FOGOS DE ARTIFÍCIO — Canvas animado cobrindo a tela toda
+// ══════════════════════════════════════════════════════════════════════════════
+const fwCanvas = document.getElementById('fireworks-canvas');
+const fwCtx    = fwCanvas.getContext('2d');
+let fwParticles=[], fwRockets=[], fwRAF=null, fwActive=false, fwStopAt=0;
+
+const FW_COLORS=['#00e5ff','#00ff9d','#ff8c00','#ff2d55','#ffd000','#bf80ff','#ff80bf','#80ffbf','#ffffff'];
+
+function fwResize(){
+  fwCanvas.width  = window.innerWidth;
+  fwCanvas.height = window.innerHeight;
+}
+
+function launchFireworks(){
+  fwActive=true;
+  fwCanvas.style.display='block';
+  fwResize();
+  fwParticles=[]; fwRockets=[];
+  fwStopAt=Date.now()+4500; // 4.5 segundos de fogos
+  // Lança fogos imediatamente
+  for(let i=0;i<6;i++) setTimeout(()=>spawnRocket(), i*160);
+  // Continua lançando até o tempo acabar
+  const interval=setInterval(()=>{
+    if(Date.now()>fwStopAt-800){ clearInterval(interval); return; }
+    spawnRocket();
+  },350);
+  fwLoop();
+}
+
+function stopFireworks(){
+  fwActive=false;
+  fwCanvas.style.display='none';
+  if(fwRAF){ cancelAnimationFrame(fwRAF); fwRAF=null; }
+  fwParticles=[]; fwRockets=[];
+}
+
+function spawnRocket(){
+  const color=FW_COLORS[Math.floor(Math.random()*FW_COLORS.length)];
+  fwRockets.push({
+    x: fwCanvas.width*(0.15+Math.random()*0.7),
+    y: fwCanvas.height,
+    vy: -(fwCanvas.height*(0.55+Math.random()*0.35))/38,
+    vx: (Math.random()-0.5)*2.5,
+    color,
+    trail:[],
+    exploded:false
+  });
+}
+
+function spawnExplosion(x,y,color){
+  const count=60+Math.floor(Math.random()*50);
+  for(let i=0;i<count;i++){
+    const angle=Math.random()*Math.PI*2;
+    const speed=1.5+Math.random()*5;
+    const hue=Math.random()<0.3?FW_COLORS[Math.floor(Math.random()*FW_COLORS.length)]:color;
+    fwParticles.push({
+      x,y,
+      vx:Math.cos(angle)*speed,
+      vy:Math.sin(angle)*speed,
+      alpha:1,
+      size:1.5+Math.random()*3,
+      color:hue,
+      gravity:0.08+Math.random()*0.06,
+      fade:0.012+Math.random()*0.018,
+      sparkle:Math.random()<0.3
+    });
+  }
+  // Estrelinhas extras
+  for(let i=0;i<20;i++){
+    const angle=Math.random()*Math.PI*2;
+    const speed=3+Math.random()*7;
+    fwParticles.push({
+      x,y,
+      vx:Math.cos(angle)*speed,
+      vy:Math.sin(angle)*speed,
+      alpha:1,
+      size:2+Math.random()*2,
+      color:'#ffffff',
+      gravity:0.05,
+      fade:0.025+Math.random()*0.02,
+      sparkle:true
+    });
+  }
+}
+
+function fwLoop(){
+  if(!fwActive){ return; }
+  fwCtx.clearRect(0,0,fwCanvas.width,fwCanvas.height);
+
+  // Rockets
+  for(let i=fwRockets.length-1;i>=0;i--){
+    const r=fwRockets[i];
+    r.trail.push({x:r.x,y:r.y});
+    if(r.trail.length>12) r.trail.shift();
+    r.x+=r.vx; r.y+=r.vy; r.vy+=0.06;
+    // Desenha trail
+    for(let t=0;t<r.trail.length;t++){
+      const alpha=(t/r.trail.length)*0.6;
+      fwCtx.beginPath();
+      fwCtx.arc(r.trail[t].x,r.trail[t].y,1.5*(t/r.trail.length),0,Math.PI*2);
+      fwCtx.fillStyle=r.color; fwCtx.globalAlpha=alpha;
+      fwCtx.fill();
+    }
+    fwCtx.globalAlpha=1;
+    // Explode quando sobe o suficiente ou velocidade vira positiva
+    if(r.vy>=-0.5 || r.y<fwCanvas.height*0.55){
+      spawnExplosion(r.x,r.y,r.color);
+      fwRockets.splice(i,1);
+    }
+  }
+
+  // Particles
+  for(let i=fwParticles.length-1;i>=0;i--){
+    const p=fwParticles[i];
+    p.x+=p.vx; p.y+=p.vy;
+    p.vy+=p.gravity;
+    p.vx*=0.98; p.alpha-=p.fade;
+    if(p.alpha<=0){ fwParticles.splice(i,1); continue; }
+    fwCtx.globalAlpha=p.alpha;
+    if(p.sparkle && Math.random()<0.5){
+      // Desenha estrela
+      fwCtx.beginPath();
+      for(let s=0;s<5;s++){
+        const a=s*(Math.PI*2/5)-Math.PI/2;
+        const ai=a+Math.PI/5;
+        const or=p.size*1.8, ir=p.size*0.8;
+        s===0?fwCtx.moveTo(p.x+Math.cos(a)*or,p.y+Math.sin(a)*or):fwCtx.lineTo(p.x+Math.cos(a)*or,p.y+Math.sin(a)*or);
+        fwCtx.lineTo(p.x+Math.cos(ai)*ir,p.y+Math.sin(ai)*ir);
+      }
+      fwCtx.closePath();
+      fwCtx.fillStyle=p.color; fwCtx.fill();
+    } else {
+      fwCtx.beginPath();
+      fwCtx.arc(p.x,p.y,p.size,0,Math.PI*2);
+      fwCtx.fillStyle=p.color; fwCtx.fill();
+    }
+    fwCtx.globalAlpha=1;
+  }
+
+  // Para quando não há mais partículas e tempo acabou
+  if(Date.now()>fwStopAt && fwParticles.length===0 && fwRockets.length===0){
+    stopFireworks();
+    return;
+  }
+
+  fwRAF=requestAnimationFrame(fwLoop);
+}
+
+window.addEventListener('resize', ()=>{ if(fwActive) fwResize(); });
+
+// ── Outros helpers ─────────────────────────────────────────────────────────────
+function showResult(win,msg){
+  const div=document.getElementById('result');
+  const detail=win?`🟡 6 solutos/célula | Δconc: ${Math.abs(sA/wA-sB/wB).toFixed(4)}`:'Tente novamente!';
+  div.innerHTML=`<div class="res-msg ${win?'res-win':'res-fail'}">${msg}</div><div class="res-sub">${detail}</div>`;
+}
+
+function addLog(msg,eq=false){
+  const l=document.getElementById('log');
+  const e=document.createElement('div');
+  e.className='log-e'+(eq?' eq':'');
+  let ts; try{ts=new Date().toLocaleTimeString('pt-BR');}catch(err){ts=new Date().toTimeString().slice(0,8);}
+  e.textContent=`[${ts}] ${msg}`;
+  l.prepend(e);
+}
+
+function setSpdLabel(v){ document.getElementById('spd-val').textContent=v+'×'; }
+
+function shareGame(){
+  const url=window.location.href;
+  const title='🧬 Osmose — Jogue agora!';
+  const text='Aprenda osmose jogando! Equilibre as células movendo água pela membrana.';
+  if(navigator.share){ navigator.share({title,text,url}).catch(()=>{}); }
+  else if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(url).then(()=>alert('🔗 Link copiado!')).catch(()=>prompt('Copie:',url)); }
+  else{ prompt('Copie:',url); }
+}
+
+function toggleGuide(){
+  const b=document.getElementById('qbody'),a=document.getElementById('qarrow'),h=document.getElementById('qhdr');
+  const o=b.classList.toggle('open');
+  a.classList.toggle('open',o); h.classList.toggle('open',o);
+}
+function openSheet(){ document.getElementById('overlay').style.display='flex'; }
+function closeSheet(){ document.getElementById('overlay').style.display='none'; }
+function overlayClick(e){ if(e.target===document.getElementById('overlay')) closeSheet(); }
+function tab(name,btn){
+  document.querySelectorAll('.tpanel').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('on'));
+  document.getElementById('tp-'+name).classList.add('on'); btn.classList.add('on');
+}
+
+let ty0=0;
+document.getElementById('sheet').addEventListener('touchstart',e=>{ty0=e.touches[0].clientY;},{passive:true});
+document.getElementById('sheet').addEventListener('touchend',e=>{if(e.changedTouches[0].clientY-ty0>80)closeSheet();},{passive:true});
+
+// Clicar na tela para parar os fogos
+fwCanvas.addEventListener('click',()=>stopFireworks());
+fwCanvas.addEventListener('touchstart',()=>stopFireworks(),{passive:true});
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight') move(true);
+  if(e.key==='ArrowLeft')  move(false);
+  if(e.key==='r'||e.key==='R') reset();
+  if(e.key==='Escape'){ closeSheet(); stopFireworks(); }
+});
+
+load(0);
+setTimeout(()=>openSheet(),500);
+</script>
+</body>
+</html>
